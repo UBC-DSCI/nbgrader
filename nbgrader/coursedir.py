@@ -129,6 +129,17 @@ class CourseDirectory(LoggingConfigurable):
             """
         )
     ).tag(config=True)
+    
+    prerelease_directory = Unicode(
+        'prerelease',
+        help=dedent(
+            """
+            The name of the directory that contains the master/instructor
+            version of assignments. This corresponds to the `nbgrader_step`
+            variable in the `directory_structure` config option.
+            """
+        )
+    ).tag(config=True)
 
     release_directory = Unicode(
         'release',
