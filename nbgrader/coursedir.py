@@ -130,8 +130,8 @@ class CourseDirectory(LoggingConfigurable):
         )
     ).tag(config=True)
     
-    prerelease_directory = Unicode(
-        'prerelease',
+    template_directory = Unicode(
+        'template',
         help=dedent(
             """
             The name of the directory that contains the master/instructor
