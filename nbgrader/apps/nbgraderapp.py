@@ -101,6 +101,15 @@ class NbGraderApp(NbGrader):
                 """
             ).strip()
         ),
+        generate_tests=(
+            GenerateTestsApp,
+            dedent(
+                """
+                Produce the source version of an assignment, filling in any template tests.
+                Intended for use by instructors only.
+                """
+            ).strip()
+        ),
         generate_assignment=(
             GenerateAssignmentApp,
             dedent(
