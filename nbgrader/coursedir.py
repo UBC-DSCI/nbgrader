@@ -135,7 +135,7 @@ class CourseDirectory(LoggingConfigurable):
         help=dedent(
             """
             The name of the directory that contains the master/instructor
-            version of assignments. This corresponds to the `nbgrader_step`
+            template assignments. This corresponds to the `nbgrader_step`
             variable in the `directory_structure` config option.
             """
         )
