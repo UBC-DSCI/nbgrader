@@ -19,7 +19,10 @@ from ..preprocessors import (
 )
 
 
-class GenerateAssignment(BaseConverter):
+#TODO fix this to be about tests, not assignment gen
+
+
+class GenerateTests(BaseConverter):
 
     create_assignment = Bool(
         True,
