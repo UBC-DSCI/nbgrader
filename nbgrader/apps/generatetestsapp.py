@@ -5,7 +5,7 @@ import sys
 from traitlets import default
 
 from .baseapp import NbGrader, nbgrader_aliases, nbgrader_flags
-from ..converters import BaseConverter, GenerateAssignment, NbGraderException
+from ..converters import BaseConverter, GenerateTests, NbGraderException
 
 aliases = {
     'course': 'CourseDirectory.course_id'
@@ -18,28 +18,6 @@ aliases.update({
 flags = {}
 flags.update(nbgrader_flags)
 flags.update({
-    'no-db': (
-        {
-            'SaveCells': {'enabled': False},
-            'GenerateAssignment': {'no_database': True}
-        },
-        "Do not save information into the database."
-    ),
-    'no-metadata': (
-        {
-            'ClearSolutions': {'enforce_metadata': False},
-            'ClearHiddenTests': {'enforce_metadata': False},
-            'ClearMarkScheme': {'enforce_metadata': False},
-            'CheckCellMetadata': {'enabled': False},
-            'ComputeChecksums': {'enabled': False}
-        },
-        "Do not validate or modify cell metatadata."
-    ),
-    'create': (
-        {'GenerateAssignment': {'create_assignment': True}},
-        "Deprecated: Create an entry for the assignment in the database, if one does not already exist. "
-        "This is now the default."
-    ),
     'force': (
         {'BaseConverter': {'force': True}},
         "Overwrite an assignment/submission if it already exists."
@@ -51,17 +29,21 @@ flags.update({
 })
 
 
-class GenerateAssignmentApp(NbGrader):
+class GenerateTestsApp(NbGrader):
 
-    name = u'nbgrader-generate-assignment'
-    description = u'Produce the version of an assignment to be released to students.'
+    name = u'nbgrader-generate-tests'
+    description = u'Produce the source version of an assignment, filling in any template tests.'
 
     aliases = aliases
     flags = flags
 
     examples = """
-        Produce the version of the assignment that is intended to be released to
-        students. This performs several modifications to the original assignment:
+        Produce the source version of an assignment, filling in any template tests.
+        This performs several modifications to a template assignment:
+          
+            ##########################################################
+            ### TODO fix the below description for test generation ###
+            ##########################################################
 
             1. It inserts a header and/or footer to each notebook in the
                assignment, if the header/footer are specified.
@@ -88,46 +70,32 @@ class GenerateAssignmentApp(NbGrader):
                If the assignment is not already present in the database, it
                will be automatically created when running `nbgrader generate_assignment`.
 
-        `nbgrader generate_assignment` takes one argument (the name of the assignment), and
-        looks for notebooks in the 'source' directory by default, according to
+        `nbgrader generate_tests` takes one argument (the name of the assignment), and
+        looks for notebooks in the 'template' directory by default, according to
         the directory structure specified in `CourseDirectory.directory_structure`.
-        The student version is then saved into the 'release' directory.
+        The version with templates all filled in is saved into the 'source' directory.
 
         Note that the directory structure requires the `student_id` to be given;
         however, there is no student ID at this point in the process. Instead,
-        `nbgrader generate_assignment` sets the student ID to be '.' so by default, files are
+        `nbgrader generate_tests` sets the student ID to be '.' so by default, files are
         read in according to:
 
-            source/./{assignment_id}/{notebook_id}.ipynb
+            template/./{assignment_id}/{notebook_id}.ipynb
 
         and saved according to:
 
-            release/./{assignment_id}/{notebook_id}.ipynb
+            source/./{assignment_id}/{notebook_id}.ipynb
 
         """
 
     @default("classes")
     def _classes_default(self):
-        classes = super(GenerateAssignmentApp, self)._classes_default()
-        classes.extend([BaseConverter, GenerateAssignment])
+        classes = super(GenerateTestsApp, self)._classes_default()
+        classes.extend([BaseConverter, GenerateTests])
         return classes
 
-    def _load_config(self, cfg, **kwargs):
-        if 'AssignApp' in cfg:
-            self.log.warning(
-                "Use GenerateAssignment in config, not AssignApp. Outdated config:\n%s",
-                '\n'.join(
-                    'AssignApp.{key} = {value!r}'.format(key=key, value=value)
-                    for key, value in cfg.AssignApp.items()
-                )
-            )
-            cfg.GenerateAssignment.merge(cfg.AssignApp)
-            del cfg.AssignApp
-
-        super(GenerateAssignmentApp, self)._load_config(cfg, **kwargs)
-
     def start(self):
-        super(GenerateAssignmentApp, self).start()
+        super(GenerateTestsApp, self).start()
 
         if len(self.extra_args) > 1:
             self.fail("Only one argument (the assignment id) may be specified")
@@ -138,7 +106,7 @@ class GenerateAssignmentApp(NbGrader):
         elif len(self.extra_args) == 1:
             self.coursedir.assignment_id = self.extra_args[0]
 
-        converter = GenerateAssignment(coursedir=self.coursedir, parent=self)
+        converter = GenerateTests(coursedir=self.coursedir, parent=self)
         try:
             converter.start()
         except NbGraderException:
