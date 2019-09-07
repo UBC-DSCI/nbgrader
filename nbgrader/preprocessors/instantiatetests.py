@@ -31,12 +31,26 @@ class InstantiateTests(Execute):
         #first, run the cell normally
         cell, resources = super(InstantiateTests).preprocess_cell(cell, resources, index)
         #extract lines for autotested variables
-        _pull_autotest_lines(self, cell)
+        varnames = _pull_autotest_vars(self, cell)
+
+        # determine whether the cell is a grade cell
+        is_grade = utils.is_grade(cell)
+
+        # check that it is marked as a grade cell if we removed an autotest line
+        if not is_grade and varnames != None:
+            if self.enforce_metadata:
+                raise RuntimeError(
+                    "Autotest region detected in a non-grade cell; "
+                    "please make sure all autotest regions are within "
+                    "'Autograder tests' cells."
+                )
+
+
         #run code required to instantiate each autotest
         #insert the test back into the notebook
         return cell, resources
 
-    def _pull_autotest_lines(self, cell):
+    def _pull_autotest_vars(self, cell):
         return cell
 
     def _instantiate_test(self, cell):
