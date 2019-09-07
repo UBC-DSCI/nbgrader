@@ -18,6 +18,18 @@ aliases.update({
 flags = {}
 flags.update(nbgrader_flags)
 flags.update({
+    'no-db': (
+        {
+            'SaveCells': {'enabled': False},
+            'GenerateAssignment': {'no_database': True}
+        },
+        "Do not save information into the database."
+    ),
+    'create': (
+        {'GenerateAssignment': {'create_assignment': True}},
+        "Deprecated: Create an entry for the assignment in the database, if one does not already exist. "
+        "This is now the default."
+    ),
     'force': (
         {'BaseConverter': {'force': True}},
         "Overwrite an assignment/submission if it already exists."
