@@ -7,6 +7,15 @@ try:
 except ImportError:
     from time import time as monotonic # Py 2
 
+
+def get_type_code(kernel_name):
+    if kernel_name == 'ir': 
+        return lambda var_name : "class(" + var_name + ")"
+    elif kernel_name == 'python3':
+        return lambda var_name : "type(" + var_name +")"
+    else:
+        raise NotImplementedError("NbGrader AUTOTEST not implemented for kernels other than 'ir' and 'python3'.")
+
 class InstantiateTests(Execute):
 
     autotest_delimiter = Unicode(
@@ -27,9 +36,49 @@ class InstantiateTests(Execute):
         )
     ).tag(config=True)
 
+    def __init__(self, **kw):
+        #run the parent constructor
+        super(InstantiateTests, self).__init__(**kw)
+        #load the autotests template file
+        
+        
+
+    def __init__(self):
+
+
     def preprocess_cell(self, cell, resources, index):
         #first, run the cell normally
         cell, resources = super(InstantiateTests).preprocess_cell(cell, resources, index)
+
+        #if it's not a code cell or it's empty, just return
+        if cell.cell_type != 'code':
+            return cell, resources
+
+        #get the function that creates the right "type" function for the language that's running
+        #might need this... self.kernel_name = self.nb.metadata['kernelspec']['name']
+        type_code = get_type_code(self.kernel_name)
+
+        #split the code lines into separate strings
+        lines = cell.source.split("\n")
+        new_lines = []
+        for line in lines:
+            #if the current line doesn't have the autotest_delimiter or is not a comment 
+            if autotest_delimiter not in line or line[0] != '#':
+                #just append line to new_lines and continue
+                new_lines.append(line)
+                continue
+            
+            #take everything after the autotest_delimiter and split by commas/spaces
+            #these are expected to be variable names
+            var_names = line[line.find(autotest_delimiter)+len(autotest_delimiter):].split(" ,")
+
+            #get the type of each variable
+            var_names_types = [(var, self._execute_code(type_code(var))) for var in var_names]
+
+            #
+        
+       
+
         #extract lines for autotested variables
         varnames = _pull_autotest_vars(self, cell)
 
@@ -49,9 +98,6 @@ class InstantiateTests(Execute):
         #run code required to instantiate each autotest
         #insert the test back into the notebook
         return cell, resources
-
-    def _pull_autotest_vars(self, cell):
-        return cell
 
     def _instantiate_test(self, cell):
         pass

@@ -1,7 +1,6 @@
 from .baseapp import NbGrader
 from .assignapp import AssignApp
 from .generateassignmentapp import GenerateAssignmentApp
-from .generatetestsapp import GenerateTestsApp
 from .autogradeapp import AutogradeApp
 from .feedbackapp import FeedbackApp
 from .generatefeedbackapp import GenerateFeedbackApp
@@ -34,7 +33,6 @@ __all__ = [
     'NbGraderApp',
     'AssignApp',
     'GenerateAssignmentApp',
-    'GenerateTestsApp',
     'AutogradeApp',
     'FeedbackApp',
     'GenerateFeedbackApp',

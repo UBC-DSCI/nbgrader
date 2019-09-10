@@ -917,36 +917,6 @@ class NbGraderAPI(LoggingConfigurable):
             app.create_assignment = create
             return capture_log(app)
 
-    def generate_tests(self, assignment_id, force=True, create=True):
-        """Run ``nbgrader generate_tests`` for a particular assignment.
-
-        Arguments
-        ---------
-        assignment_id: string
-            The name of the assignment
-        force: bool
-            Whether to force creating the source version, even if it already
-            exists.
-        create: bool
-            Whether to create the assignment in the database, if it doesn't
-            already exist.
-
-        Returns
-        -------
-        result: dict
-            A dictionary with the following keys (error and log may or may not be present):
-
-            - success (bool): whether or not the operation completed successfully
-            - error (string): formatted traceback
-            - log (string): captured log output
-
-        """
-        with temp_attrs(self.coursedir, assignment_id=assignment_id):
-            app = GenerateTests(coursedir=self.coursedir, parent=self)
-            app.force = force
-            app.create_assignment = create
-            return capture_log(app)
-
     def unrelease(self, assignment_id):
         """Run ``nbgrader list --remove`` for a particular assignment.
 
