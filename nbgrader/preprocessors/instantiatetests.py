@@ -1,3 +1,5 @@
+import os
+import json
 from traitlets import Bool, List, Integer
 from textwrap import dedent
 from . import Execute
@@ -17,6 +19,11 @@ def get_type_code(kernel_name):
         raise NotImplementedError("NbGrader AUTOTEST not implemented for kernels other than 'ir' and 'python3'.")
 
 class InstantiateTests(Execute):
+
+    autotest_filename = Unicode(
+        "tests.json",
+        help="The filename where automatic testing code is stored"
+    ).tag(config=True)
 
     autotest_delimiter = Unicode(
         "AUTOTEST",
@@ -40,19 +47,32 @@ class InstantiateTests(Execute):
         #run the parent constructor
         super(InstantiateTests, self).__init__(**kw)
         #load the autotests template file
+        assignment_folder = self._format_source(self, assignment_id, student_id, escape=False)
+        try:
+            with open(os.path.join(assignment_folder, self.autotest_filename), 'r') as tests_file:
+                self.tests = json.load(tests_file)
+        except FileNotFoundError:
+            #if there is no tests file, just create a default empty tests dict
+            self.log.warning('InstantiateTests preprocessor: no tests.json file found. Defaulting to empty tests dict')
+            self.tests = {}
+        except json.JSONDecodeError as e:
+            self.log.error('InstantiateTests preprocessor: tests.json contains invalid JSON code.')
+            self.log.error(e.msg)
+            raise
+            
+       
         
-        
-
-    def __init__(self):
-
-
     def preprocess_cell(self, cell, resources, index):
+
         #first, run the cell normally
         cell, resources = super(InstantiateTests).preprocess_cell(cell, resources, index)
 
         #if it's not a code cell or it's empty, just return
         if cell.cell_type != 'code':
             return cell, resources
+
+        # determine whether the cell is a grade cell
+        is_grade = utils.is_grade(cell)
 
         #get the function that creates the right "type" function for the language that's running
         #might need this... self.kernel_name = self.nb.metadata['kernelspec']['name']
@@ -62,17 +82,26 @@ class InstantiateTests(Execute):
         lines = cell.source.split("\n")
         new_lines = []
         for line in lines:
+
             #if the current line doesn't have the autotest_delimiter or is not a comment 
+            #then just append the line to the new cell code and go to the next line
             if autotest_delimiter not in line or line[0] != '#':
-                #just append line to new_lines and continue
                 new_lines.append(line)
                 continue
+
+            # there are autotests; we should check that it is a grading cell
+            if not is_grade and self.enforce_metadata: 
+                raise RuntimeError(
+                   "Autotest region detected in a non-grade cell; "
+                   "please make sure all autotest regions are within "
+                   "'Autograder tests' cells."
+                )
             
             #take everything after the autotest_delimiter and split by commas/spaces
             #these are expected to be variable names
             var_names = line[line.find(autotest_delimiter)+len(autotest_delimiter):].split(" ,")
-
-            #get the type of each variable
+ 
+            #get the type of each variable (will be used to dispatch autotest code)
             var_names_types = [(var, self._execute_code(type_code(var))) for var in var_names]
 
             #
@@ -82,17 +111,7 @@ class InstantiateTests(Execute):
         #extract lines for autotested variables
         varnames = _pull_autotest_vars(self, cell)
 
-        # determine whether the cell is a grade cell
-        is_grade = utils.is_grade(cell)
-
-        # check that it is marked as a grade cell if we removed an autotest line
-        if not is_grade and varnames != None:
-            if self.enforce_metadata:
-                raise RuntimeError(
-                    "Autotest region detected in a non-grade cell; "
-                    "please make sure all autotest regions are within "
-                    "'Autograder tests' cells."
-                )
+        
 
 
         #run code required to instantiate each autotest
