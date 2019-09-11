@@ -1,8 +1,10 @@
 import os
 import json
+import jinja2 as j2
 from traitlets import Bool, List, Integer
 from textwrap import dedent
 from . import Execute
+import secrets
 
 try:
     from time import monotonic # Py 3
@@ -10,7 +12,7 @@ except ImportError:
     from time import time as monotonic # Py 2
 
 
-def get_type_code(kernel_name):
+def get_code_snippets(kernel_name):
     if kernel_name == 'ir': 
         return lambda var_name : "class(" + var_name + ")"
     elif kernel_name == 'python3':
@@ -28,6 +30,11 @@ class InstantiateTests(Execute):
     autotest_delimiter = Unicode(
         "AUTOTEST",
         help="The delimiter prior to a variable to be autotested"
+    ).tag(config=True)
+
+    use_salt = Bool(
+        True,
+        help="Whether to add a salt to digested answers"
     ).tag(config=True)
 
     enforce_metadata = Bool(
@@ -59,9 +66,10 @@ class InstantiateTests(Execute):
             self.log.error('InstantiateTests preprocessor: tests.json contains invalid JSON code.')
             self.log.error(e.msg)
             raise
-            
-       
+        #get the function that creates the right "type" and "digest" function for the language that's running
+        self.type_code, self.digest_code = get_code_snippets(self.kernel_name)
         
+            
     def preprocess_cell(self, cell, resources, index):
 
         #first, run the cell normally
@@ -73,10 +81,6 @@ class InstantiateTests(Execute):
 
         # determine whether the cell is a grade cell
         is_grade = utils.is_grade(cell)
-
-        #get the function that creates the right "type" function for the language that's running
-        #might need this... self.kernel_name = self.nb.metadata['kernelspec']['name']
-        type_code = get_type_code(self.kernel_name)
 
         #split the code lines into separate strings
         lines = cell.source.split("\n")
@@ -100,22 +104,46 @@ class InstantiateTests(Execute):
             #take everything after the autotest_delimiter and split by commas/spaces
             #these are expected to be variable names
             var_names = line[line.find(autotest_delimiter)+len(autotest_delimiter):].split(" ,")
- 
-            #get the type of each variable (will be used to dispatch autotest code)
-            var_names_types = [(var, self._execute_code(type_code(var))) for var in var_names]
 
-            #
-        
-       
+            #for each variable to be autotested, compute whatever is necessary and insert the test code back into the cell
+            for var in var_names:
+                #get the type of variable (used to dispatch autotest)
+                var_type = self._execute_code(type_code(var)) 
 
-        #extract lines for autotested variables
-        varnames = _pull_autotest_vars(self, cell)
+                #get the test code; if the type isn't in our dict, just default to 'default'
+                #if default isn't in the tests code, this will throw an error
+                try:
+                    test = self.tests[var_type] if var_type in self.tests else self.tests['default']
+                    test_code = test['code']
+                    test_evals = test['evals']
+                except KeyError:
+                    self.log.error('InstantiateTests preprocessor: tests.json must contain a top-level "default" key with corresponding test code')
+                    raise
 
-        
+                #create a random salt for this test
+                salt = secrets.token_hex(8)
 
+                #evaluate everything needed to instantiate the test
+                test_answers = {}
+                for name, snippet in test_evals:
+                    output = self._execute_code(snippet)
+                    test_answers[name] = output+salt
 
-        #run code required to instantiate each autotest
-        #insert the test back into the notebook
+                #create the template from the test_code
+                template = j2.Environment(loader=j2.BaseLoader).from_string(test_code)
+
+                #instantiate the test
+                instantiated_test = template.render(test_answers)
+
+                #add lines of code to the cell 
+                new_lines.append(instantiated_test.split('\n'))
+                
+                #add an empty line after this block of test code
+                new_lines.append('')
+
+        # replace the cell source
+        cell.source = "\n".join(new_lines)
+
         return cell, resources
 
     def _instantiate_test(self, cell):
