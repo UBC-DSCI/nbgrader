@@ -130,17 +130,6 @@ class CourseDirectory(LoggingConfigurable):
         )
     ).tag(config=True)
     
-    template_directory = Unicode(
-        'template',
-        help=dedent(
-            """
-            The name of the directory that contains the master/instructor
-            template assignments. This corresponds to the `nbgrader_step`
-            variable in the `directory_structure` config option.
-            """
-        )
-    ).tag(config=True)
-
     release_directory = Unicode(
         'release',
         help=dedent(
