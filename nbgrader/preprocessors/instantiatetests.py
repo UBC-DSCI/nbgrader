@@ -136,7 +136,7 @@ class InstantiateTests(Execute):
             #tests object from the tests.json template file for the assignment
             #and append any setup code to the cell block we're in
             if self.tests is None:
-                self._load_test_templates()
+                self._load_test_templates(resources)
                 if 'setup' in self.tests:
                     new_lines.append(self.tests['setup'])
                  
