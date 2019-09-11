@@ -60,7 +60,7 @@ An error occurred while executing the following code:
 {traceback}
 """
 
-def get_code_snippets(kernel_name):
+def get_type_snippet(kernel_name):
     if kernel_name == 'ir': 
         return lambda var_name : "class(" + var_name + ")"
     elif kernel_name == 'python3':
@@ -101,24 +101,9 @@ class InstantiateTests(Execute):
     ).tag(config=True)
 
     def preprocess_cell(self, cell, resources, index):
-        #get the tests object from the tests.json template file for the assignment
-        if self.tests is None:
-            self.log.debug('Instantiate tests loading tests.json...')
-            try:
-                with open(os.path.join(resources['metadata']['path'], self.autotest_filename), 'r') as tests_file:
-                    self.tests = json.load(tests_file)
-                self.log.debug(self.tests)
-            except FileNotFoundError:
-                #if there is no tests file, just create a default empty tests dict
-                self.log.warning('No tests.json file found. Defaulting to empty tests dict')
-                self.tests = {}
-            except json.JSONDecodeError as e:
-                self.log.error('tests.json contains invalid JSON code.')
-                self.log.error(e.msg)
-                raise
-            #get the function that creates the right "type" and "digest" function for the language that's running
-            self.type_code = get_code_snippets(self.kernel_name)
-
+        #new_lines will store the replacement code after autotest template instantiation
+        new_lines = []
+ 
         #first, run the cell normally
         cell, resources = super(InstantiateTests, self).preprocess_cell(cell, resources, index)
 
@@ -131,7 +116,6 @@ class InstantiateTests(Execute):
 
         #split the code lines into separate strings
         lines = cell.source.split("\n")
-        new_lines = []
         for line in lines:
 
             #if the current line doesn't have the autotest_delimiter or is not a comment 
@@ -147,55 +131,45 @@ class InstantiateTests(Execute):
                    "please make sure all autotest regions are within "
                    "'Autograder tests' cells."
                 )
+
+            #the first time we run into an autotest delimiter, obtain the 
+            #tests object from the tests.json template file for the assignment
+            #and append any setup code to the cell block we're in
+            if self.tests is None:
+                self._load_test_templates()
+                if 'setup' in self.tests:
+                    new_lines.append(self.tests['setup'])
+                 
             
-            #take everything after the autotest_delimiter and split by commas/spaces
-            #these are expected to be variable names
+            #take everything after the autotest_delimiter as a code snippet
             snippet = line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].strip()
             self.log.debug('Found snippet to autotest: ' + snippet)
 
-            #get the type of the snippet output (used to dispatch autotest)
-            snippet_type = self._execute_code_snippet(self.type_code(snippet)) 
-            self.log.debug('Snippet type returned by kernel: ' + snippet_type)
-            #get the test code; if the type isn't in our dict, just default to 'default'
-            #if default isn't in the tests code, this will throw an error
-            try:
-                if snippet_type in self.tests:
-                    test = self.tests[snippet_type] 
-                else: 
-                    test = self.tests['default']
-            except KeyError:
-                self.log.error('tests.json must contain a top-level "default" key with corresponding test code')
-                raise
-            try:
-                test_template_code = test['template']
-                test_answer_code = test['answers']
-            except KeyError:
-                self.log.error('each type in tests.json must have a "template" and "answers" item')
-                self.log.error('the "template" item should store the test template code, and the "answers" item should store a dict of template variable names and snippets to run')
-                raise
+            test_template_code, test_answer_code = self._get_templates(snippet)
+            
             #create a random salt for this test
             salt = secrets.token_hex(8)
-            
             self.log.debug('Salt: ' + salt)
 
             #evaluate everything needed to instantiate the test
             test_answers = {}
-            self.log.debug('Getting answers to Salt: ' + salt)
-            for template_varname, template_snippet in test_answer_code:
-                output = self._execute_code(template_snippet)
+            self.log.debug('Getting template answers') 
+
+            for template_varname, template_snippet in test_answer_code.items():
                 self.log.debug('Template variable name: ' + template_varname)
                 self.log.debug('Template snippet: ' + template_snippet)
-                self.log.debug('Output: ' + output)
-                test_answers[template_varname] = output+salt
 
-            #create the template from the test_code
+                #evaluate the template snippet needed to instantiate the template
+                test_answers[template_varname] = self._evaluate_template_snippet(snippet, template_snippet, salt)
+                
+
+            #instantiate the overall test template
             template = j2.Environment(loader=j2.BaseLoader).from_string(test_template_code)
-
-            #instantiate the test
-            instantiated_test = template.render(snippet=snippet, **test_answers)
+            instantiated_test = template.render(snippet=snippet, salt=salt, **test_answers)
+            self.log.debug('Instantiated test: ' + instantiated_test)
 
             #add lines of code to the cell 
-            new_lines.append(instantiated_test.split('\n'))
+            new_lines.extend(instantiated_test.split('\n'))
             
             #add an empty line after this block of test code
             new_lines.append('')
@@ -205,11 +179,58 @@ class InstantiateTests(Execute):
 
         return cell, resources
 
-    def _instantiate_test(self, cell):
-        pass
+    def _load_test_templates(self, resources):
+        self.log.debug('loading template tests.json...')
+        try:
+            with open(os.path.join(resources['metadata']['path'], self.autotest_filename), 'r') as tests_file:
+                self.tests = json.load(tests_file)
+            self.log.debug(self.tests)
+        except FileNotFoundError:
+            #if there is no tests file, just create a default empty tests dict
+            self.log.warning('No tests.json file found. Defaulting to empty tests dict')
+            self.tests = {}
+        except json.JSONDecodeError as e:
+            self.log.error('tests.json contains invalid JSON code.')
+            self.log.error(e.msg)
+            raise
+        #get the function that creates the right "type" function for the language that's running
+        self.type_code = get_type_snippet(self.kernel_name)
+        #if there is setup code, run it now
+        if 'setup' in self.tests:
+            self._execute_code_snippet(self.tests['setup'])
 
-    def _insert_instantiated_test_code(self, cell):
-        pass
+    def _get_templates(self, snippet):
+        #get the type of the snippet output (used to dispatch autotest)
+        snippet_type = self._execute_code_snippet(self.type_code(snippet)) 
+        self.log.debug('Snippet type returned by kernel: ' + snippet_type)
+        #get the test code; if the type isn't in our dict, just default to 'default'
+        #if default isn't in the tests code, this will throw an error
+        try:
+            if snippet_type in self.tests:
+                test = self.tests[snippet_type] 
+            else: 
+                test = self.tests['default']
+        except KeyError:
+            self.log.error('tests.json must contain a top-level "default" key with corresponding test code')
+            raise
+        try:
+            test_template_code = test['template']
+            test_answer_code = test['answers']
+        except KeyError:
+            self.log.error('each type in tests.json must have a "template" and "answers" item')
+            self.log.error('the "template" item should store the test template code, and the "answers" item should store a dict of template variable names and snippets to run')
+            raise
+        return test_template_code, test_answer_code
+
+    def _evaluate_template_snippet(self, snippet, template_snippet, salt):
+        #instantiate the template snippet
+        template = j2.Environment(loader=j2.BaseLoader).from_string(template_snippet)
+        instantiated_snippet = template.render(snippet=snippet, salt=salt)
+        #run the instantiated template code
+        output = self._execute_code_snippet(instantiated_snippet)
+        self.log.debug('Instantiated test snippet: ' + instantiated_snippet)
+        self.log.debug('Output: ' + output)
+        return output
 
     #adapted from nbconvert.ExecutePreprocessor.run_cell
     def _execute_code_snippet(self, code):
