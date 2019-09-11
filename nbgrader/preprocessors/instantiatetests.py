@@ -1,7 +1,8 @@
 import os
 import json
 import jinja2 as j2
-from traitlets import Bool, List, Integer
+from .. import utils
+from traitlets import Bool, List, Integer, Unicode
 from textwrap import dedent
 from . import Execute
 import secrets
@@ -12,6 +13,53 @@ except ImportError:
     from time import time as monotonic # Py 2
 
 
+class CellExecutionComplete(Exception):
+    """
+    Used as a control signal for cell execution across run_cell and
+    process_message function calls. Raised when all execution requests
+    are completed and no further messages are expected from the kernel
+    over zeromq channels.
+    """
+    pass
+
+
+class CellExecutionError(Exception):
+    """
+    Custom exception to propagate exceptions that are raised during
+    notebook execution to the caller. This is mostly useful when
+    using nbconvert as a library, since it allows to deal with
+    failures gracefully.
+    """
+    def __init__(self, traceback):
+        super(CellExecutionError, self).__init__(traceback)
+        self.traceback = traceback
+
+    def __str__(self):
+        s = self.__unicode__()
+        if not isinstance(s, str):
+            s = s.encode('utf8', 'replace')
+        return s
+
+    def __unicode__(self):
+        return self.traceback
+
+    @classmethod
+    def from_code_and_msg(cls, code, msg):
+        """Instantiate from a code cell object and a message contents
+        (message is either execute_reply or error)
+        """
+        tb = '\n'.join(msg.get('traceback', []))
+        return cls(exec_err_msg.format(code=code, traceback=tb
+                                      ))
+
+exec_err_msg = u"""\
+An error occurred while executing the following code:
+------------------
+{code}
+------------------
+{traceback}
+"""
+
 def get_code_snippets(kernel_name):
     if kernel_name == 'ir': 
         return lambda var_name : "class(" + var_name + ")"
@@ -21,6 +69,8 @@ def get_code_snippets(kernel_name):
         raise NotImplementedError("NbGrader AUTOTEST not implemented for kernels other than 'ir' and 'python3'.")
 
 class InstantiateTests(Execute):
+
+    tests = None
 
     autotest_filename = Unicode(
         "tests.json",
@@ -50,30 +100,27 @@ class InstantiateTests(Execute):
         )
     ).tag(config=True)
 
-    def __init__(self, **kw):
-        #run the parent constructor
-        super(InstantiateTests, self).__init__(**kw)
-        #load the autotests template file
-        assignment_folder = self._format_source(self, assignment_id, student_id, escape=False)
-        try:
-            with open(os.path.join(assignment_folder, self.autotest_filename), 'r') as tests_file:
-                self.tests = json.load(tests_file)
-        except FileNotFoundError:
-            #if there is no tests file, just create a default empty tests dict
-            self.log.warning('InstantiateTests preprocessor: no tests.json file found. Defaulting to empty tests dict')
-            self.tests = {}
-        except json.JSONDecodeError as e:
-            self.log.error('InstantiateTests preprocessor: tests.json contains invalid JSON code.')
-            self.log.error(e.msg)
-            raise
-        #get the function that creates the right "type" and "digest" function for the language that's running
-        self.type_code, self.digest_code = get_code_snippets(self.kernel_name)
-        
-            
     def preprocess_cell(self, cell, resources, index):
+        #get the tests object from the tests.json template file for the assignment
+        if self.tests is None:
+            self.log.debug('Instantiate tests loading tests.json...')
+            try:
+                with open(os.path.join(resources['metadata']['path'], self.autotest_filename), 'r') as tests_file:
+                    self.tests = json.load(tests_file)
+                self.log.debug(self.tests)
+            except FileNotFoundError:
+                #if there is no tests file, just create a default empty tests dict
+                self.log.warning('No tests.json file found. Defaulting to empty tests dict')
+                self.tests = {}
+            except json.JSONDecodeError as e:
+                self.log.error('tests.json contains invalid JSON code.')
+                self.log.error(e.msg)
+                raise
+            #get the function that creates the right "type" and "digest" function for the language that's running
+            self.type_code = get_code_snippets(self.kernel_name)
 
         #first, run the cell normally
-        cell, resources = super(InstantiateTests).preprocess_cell(cell, resources, index)
+        cell, resources = super(InstantiateTests, self).preprocess_cell(cell, resources, index)
 
         #if it's not a code cell or it's empty, just return
         if cell.cell_type != 'code':
@@ -89,7 +136,7 @@ class InstantiateTests(Execute):
 
             #if the current line doesn't have the autotest_delimiter or is not a comment 
             #then just append the line to the new cell code and go to the next line
-            if autotest_delimiter not in line or line[0] != '#':
+            if self.autotest_delimiter not in line or line[0] != '#':
                 new_lines.append(line)
                 continue
 
@@ -103,43 +150,55 @@ class InstantiateTests(Execute):
             
             #take everything after the autotest_delimiter and split by commas/spaces
             #these are expected to be variable names
-            var_names = line[line.find(autotest_delimiter)+len(autotest_delimiter):].split(" ,")
+            snippet = line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].strip()
+            self.log.debug('Found snippet to autotest: ' + snippet)
 
-            #for each variable to be autotested, compute whatever is necessary and insert the test code back into the cell
-            for var in var_names:
-                #get the type of variable (used to dispatch autotest)
-                var_type = self._execute_code(type_code(var)) 
+            #get the type of the snippet output (used to dispatch autotest)
+            snippet_type = self._execute_code_snippet(self.type_code(snippet)) 
+            self.log.debug('Snippet type returned by kernel: ' + snippet_type)
+            #get the test code; if the type isn't in our dict, just default to 'default'
+            #if default isn't in the tests code, this will throw an error
+            try:
+                if snippet_type in self.tests:
+                    test = self.tests[snippet_type] 
+                else: 
+                    test = self.tests['default']
+            except KeyError:
+                self.log.error('tests.json must contain a top-level "default" key with corresponding test code')
+                raise
+            try:
+                test_template_code = test['template']
+                test_answer_code = test['answers']
+            except KeyError:
+                self.log.error('each type in tests.json must have a "template" and "answers" item')
+                self.log.error('the "template" item should store the test template code, and the "answers" item should store a dict of template variable names and snippets to run')
+                raise
+            #create a random salt for this test
+            salt = secrets.token_hex(8)
+            
+            self.log.debug('Salt: ' + salt)
 
-                #get the test code; if the type isn't in our dict, just default to 'default'
-                #if default isn't in the tests code, this will throw an error
-                try:
-                    test = self.tests[var_type] if var_type in self.tests else self.tests['default']
-                    test_code = test['code']
-                    test_evals = test['evals']
-                except KeyError:
-                    self.log.error('InstantiateTests preprocessor: tests.json must contain a top-level "default" key with corresponding test code')
-                    raise
+            #evaluate everything needed to instantiate the test
+            test_answers = {}
+            self.log.debug('Getting answers to Salt: ' + salt)
+            for template_varname, template_snippet in test_answer_code:
+                output = self._execute_code(template_snippet)
+                self.log.debug('Template variable name: ' + template_varname)
+                self.log.debug('Template snippet: ' + template_snippet)
+                self.log.debug('Output: ' + output)
+                test_answers[template_varname] = output+salt
 
-                #create a random salt for this test
-                salt = secrets.token_hex(8)
+            #create the template from the test_code
+            template = j2.Environment(loader=j2.BaseLoader).from_string(test_template_code)
 
-                #evaluate everything needed to instantiate the test
-                test_answers = {}
-                for name, snippet in test_evals:
-                    output = self._execute_code(snippet)
-                    test_answers[name] = output+salt
+            #instantiate the test
+            instantiated_test = template.render(snippet=snippet, **test_answers)
 
-                #create the template from the test_code
-                template = j2.Environment(loader=j2.BaseLoader).from_string(test_code)
-
-                #instantiate the test
-                instantiated_test = template.render(test_answers)
-
-                #add lines of code to the cell 
-                new_lines.append(instantiated_test.split('\n'))
-                
-                #add an empty line after this block of test code
-                new_lines.append('')
+            #add lines of code to the cell 
+            new_lines.append(instantiated_test.split('\n'))
+            
+            #add an empty line after this block of test code
+            new_lines.append('')
 
         # replace the cell source
         cell.source = "\n".join(new_lines)
@@ -153,7 +212,7 @@ class InstantiateTests(Execute):
         pass
 
     #adapted from nbconvert.ExecutePreprocessor.run_cell
-    def _execute_code(self, code):
+    def _execute_code_snippet(self, code):
         parent_msg_id = self.kc.execute(code, stop_on_error=not self.allow_errors)
         self.log.debug("Executing command for autotest generation:\n%s", code)
         deadline = None
@@ -210,12 +269,14 @@ class InstantiateTests(Execute):
                 self.log.debug("content: %s", content)
 
                 if msg_type in {'execute_result', 'display_data', 'update_display_data'}:
-                    return content
+                    return content['data']['text/plain']
+
+                if msg_type == 'error':
+                    raise CellExecutionError.from_code_and_msg(code, content)
 
                 if msg_type == 'status':
                     if content['execution_state'] == 'idle':
                         raise CellExecutionComplete()
-
-             except CellExecutionComplete:
+            except CellExecutionComplete:
                  more_output = False
         return None
