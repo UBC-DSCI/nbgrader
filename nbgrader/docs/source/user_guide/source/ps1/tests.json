@@ -1,0 +1,20 @@
+{
+
+"setup": "from hashlib import sha1", 
+
+"default": {
+    "template": "assert sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest() == {{answer}}",
+    "answers": {
+        "answer": "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
+    }
+},
+
+"int": {
+    "template": "assert sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest() == {{answer}}",
+    "answers": {
+        "answer": "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
+    }
+}
+
+}  
+
