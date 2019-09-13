@@ -141,38 +141,41 @@ class InstantiateTests(Execute):
                     new_lines.append(self.tests['setup'])
                  
             
-            #take everything after the autotest_delimiter as a code snippet
-            snippet = line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].strip()
-            self.log.debug('Found snippet to autotest: ' + snippet)
-
-            test_template_code, test_answer_code = self._get_templates(snippet)
-            
-            #create a random salt for this test
-            salt = secrets.token_hex(8)
-            self.log.debug('Salt: ' + salt)
-
-            #evaluate everything needed to instantiate the test
-            test_answers = {}
-            self.log.debug('Getting template answers') 
-
-            for template_varname, template_snippet in test_answer_code.items():
-                self.log.debug('Template variable name: ' + template_varname)
-                self.log.debug('Template snippet: ' + template_snippet)
-
-                #evaluate the template snippet needed to instantiate the template
-                test_answers[template_varname] = self._evaluate_template_snippet(snippet, template_snippet, salt)
+            #take everything after the autotest_delimiter as code snippets separated by semicolons
+            snippets = [snip.strip() for snip in line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].split(';')]
+            self.log.debug('Found snippets to autotest: ')
+            for snippet in snippets:
+                self.log.debug(snippet)
+            for snippet in snippets:
+                self.log.debug('Running autotest generation for snippet ' + snippet)
+                test_template_code, test_answer_code = self._get_templates(snippet)
                 
+                #create a random salt for this test
+                salt = secrets.token_hex(8)
+                self.log.debug('Salt: ' + salt)
 
-            #instantiate the overall test template
-            template = j2.Environment(loader=j2.BaseLoader).from_string(test_template_code)
-            instantiated_test = template.render(snippet=snippet, salt=salt, **test_answers)
-            self.log.debug('Instantiated test: ' + instantiated_test)
+                #evaluate everything needed to instantiate the test
+                test_answers = {}
+                self.log.debug('Getting template answers') 
 
-            #add lines of code to the cell 
-            new_lines.extend(instantiated_test.split('\n'))
-            
-            #add an empty line after this block of test code
-            new_lines.append('')
+                for template_varname, template_snippet in test_answer_code.items():
+                    self.log.debug('Template variable name: ' + template_varname)
+                    self.log.debug('Template snippet: ' + template_snippet)
+
+                    #evaluate the template snippet needed to instantiate the template
+                    test_answers[template_varname] = self._evaluate_template_snippet(snippet, template_snippet, salt)
+                    
+
+                #instantiate the overall test template
+                template = j2.Environment(loader=j2.BaseLoader).from_string(test_template_code)
+                instantiated_test = template.render(snippet=snippet, salt=salt, **test_answers)
+                self.log.debug('Instantiated test: ' + instantiated_test)
+
+                #add lines of code to the cell 
+                new_lines.extend(instantiated_test.split('\n'))
+                
+                #add an empty line after this block of test code
+                new_lines.append('')
 
         # replace the cell source
         cell.source = "\n".join(new_lines)
