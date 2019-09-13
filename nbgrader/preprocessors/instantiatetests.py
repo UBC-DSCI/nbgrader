@@ -154,7 +154,7 @@ class InstantiateTests(Execute):
             for snippet in snippets:
                 self.log.debug('Running autotest generation for snippet ' + snippet)
 
-                test_template, variable_snippets, hash_snippets = self._get_templates(snippet, use_hash)
+                test_template, variable_snippets, hash_snippet = self._get_templates(snippet, use_hash)
                 
                 #create a random salt for this test
                 salt = secrets.token_hex(8)
@@ -162,20 +162,21 @@ class InstantiateTests(Execute):
                     self.log.debug('Salt: ' + salt) 
 
                 #evaluate everything needed to instantiate the test
-                test_answers = {}
-                self.log.debug('Getting template answers') 
+                test_variables = {}
+                self.log.debug('Getting template variable executions') 
 
                 for variable_name, variable_snippet in variable_snippets.items():
                     self.log.debug('Template variable name: ' + variable_name)
                     self.log.debug('Template snippet: ' + variable_snippet)
 
-                    #evaluate the template snippet needed to instantiate the template
-                    test_answers[template_varname] = self._evaluate_template_snippet(snippet, variable_snippet, salt, hash_snippet)
+                    #instantiate the variable snippet and evaluate it
+                    test_variables[variable_name] = {}
+                    test_variables[variable_name]['code'], test_variables[variable_name]['val'] = self._evaluate_variable_snippet(snippet, variable_snippet, salt, hash_snippet)
                     
 
                 #instantiate the overall test template
-                template = j2.Environment(loader=j2.BaseLoader).from_string(test_template_code)
-                instantiated_test = template.render(snippet=snippet, salt=salt, **test_answers)
+                template = j2.Environment(loader=j2.BaseLoader).from_string(test_template)
+                instantiated_test = template.render(snippet=snippet, **test_variables)
                 self.log.debug('Instantiated test: ' + instantiated_test)
 
                 #add lines of code to the cell 
@@ -193,7 +194,7 @@ class InstantiateTests(Execute):
         self.log.debug('loading template tests.yml...')
         try:
             with open(os.path.join(resources['metadata']['path'], self.autotest_filename), 'r') as tests_file:
-                self.tests = yaml.load(tests_file)
+                self.tests = yaml.safe_load(tests_file)
             self.log.debug(self.tests)
         except FileNotFoundError:
             #if there is no tests file, just create a default empty tests dict
@@ -239,18 +240,24 @@ class InstantiateTests(Execute):
             raise
         return test_template, variable_snippets, hash_snippet
 
-    def _evaluate_template_snippet(self, snippet, template_snippet, salt, hash_snippet):
+    def _evaluate_variable_snippet(self, snippet, variable_snippet, salt, hash_snippet):
         #first, if things are being hashed, replace snippet variable in the template_snippet with the hash_snippet
-        #TODO
+        if hash_snippet is not None:
+            #substitute the hash instantiate the template snippet
+            template = j2.Environment(loader=j2.BaseLoader).from_string(variable_snippet)
+            preprocessed_snippet = template.render(snippet=hash_snippet)   
+            self.log.debug('Variable snippet with hash template and salt inserted: ' + preprocessed_snippet)
+        else:
+            preprocessed_snippet = variable_snippet
 
         #instantiate the template snippet
-        template = j2.Environment(loader=j2.BaseLoader).from_string(template_snippet)
+        template = j2.Environment(loader=j2.BaseLoader).from_string(preprocessed_snippet)
         instantiated_snippet = template.render(snippet=snippet, salt=salt)
         #run the instantiated template code
-        output = self._execute_code_snippet(instantiated_snippet)
-        self.log.debug('Instantiated test snippet: ' + instantiated_snippet)
-        self.log.debug('Output: ' + output)
-        return output
+        variable_value = self._execute_code_snippet(instantiated_snippet)
+        self.log.debug('Instantiated variable snippet: ' + instantiated_snippet)
+        self.log.debug('Variable value: ' + variable_value)
+        return instantiated_snippet, variable_value
 
     #adapted from nbconvert.ExecutePreprocessor.run_cell
     def _execute_code_snippet(self, code):
