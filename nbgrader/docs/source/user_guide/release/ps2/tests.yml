@@ -1,0 +1,20 @@
+setup: "library(digest)"
+dispatch: "typeof({{snippet}})"
+templates:
+    default: 
+        hash: "digest(paste(toString({{snippet}}), '{{salt}}'))"
+        test: "assert({{answer.code}} == {{answer.val}})"
+        variables:
+            answer: "{{snippet}}"
+    string:
+        hash: "digest(paste({{snippet}}, '{{salt}}'))"
+        test: >
+            "assert({{str.code}} == {{str.val}})
+             assert({{strlen.code}} == {{strlen.val}})
+             print('Success!')
+            "
+        variables:
+            str: "{{snippet}}"
+            strlen: "nchar({{snippet}})"
+    
+
