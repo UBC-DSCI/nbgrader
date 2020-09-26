@@ -18,6 +18,7 @@ class ClearSolutions(NbGraderPreprocessor):
              matlab="% YOUR CODE HERE\nerror('No Answer Given!')",
              octave="% YOUR CODE HERE\nerror('No Answer Given!')",
              sas="/* YOUR CODE HERE */\n %notImplemented;",
+             R="# YOUR CODE HERE\nfail() # No Answer - remove if you provide an answer",
              java="// YOUR CODE HERE"),
         help="The code snippet that will replace code solutions"
     ).tag(config=True)
