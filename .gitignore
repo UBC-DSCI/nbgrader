@@ -110,3 +110,7 @@ package-lock.json
 .goutputstream*
 .idea
 .mypy_cache
+
+# vim backup files
+*.swp
+*.swo
