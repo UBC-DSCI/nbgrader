@@ -1,12 +1,12 @@
 setup: "library(digest)"
-dispatch: "typeof({{snippet}})"
+dispatch: "class({{snippet}})"
 templates:
     default: 
         hash: "digest(paste(toString({{snippet}}), '{{salt}}'))"
         test: "assert({{answer.code}} == {{answer.val}})"
         variables:
             answer: "{{snippet}}"
-    string:
+    numeric:
         hash: "digest(paste({{snippet}}, '{{salt}}'))"
         test: >
             "assert({{str.code}} == {{str.val}})

@@ -1,6 +1,7 @@
 import os
 import yaml
 import jinja2 as j2
+import re
 from .. import utils
 from traitlets import Bool, List, Integer, Unicode
 from textwrap import dedent
@@ -12,6 +13,10 @@ try:
 except ImportError:
     from time import time as monotonic # Py 2
 
+
+def sanitize_R_output(out):
+    out = re.sub(r'\[\d+\]\s+', '', out)
+    return out.strip('"').strip("'")
 
 class CellExecutionComplete(Exception):
     """
@@ -98,6 +103,10 @@ class InstantiateTests(Execute):
         )
     ).tag(config=True)
 
+    output_sanitizers = {
+        'ir' : sanitize_R_output
+    }
+
     def preprocess_cell(self, cell, resources, index):
         #new_lines will store the replacement code after autotest template instantiation
         new_lines = []
@@ -118,7 +127,7 @@ class InstantiateTests(Execute):
 
             #if the current line doesn't have the autotest_delimiter or is not a comment 
             #then just append the line to the new cell code and go to the next line
-            if self.autotest_delimiter not in line or line[0] != '#':
+            if self.autotest_delimiter not in line or line.strip()[0] != '#':
                 new_lines.append(line)
                 continue
 
@@ -129,18 +138,26 @@ class InstantiateTests(Execute):
                    "please make sure all autotest regions are within "
                    "'Autograder tests' cells."
                 )
+            
+            self.log.debug('')
+            self.log.debug('')
+            self.log.debug('Autotest delimiter found on line. Preprocessing...')
 
             #the first time we run into an autotest delimiter, obtain the 
             #tests object from the tests.yml template file for the assignment
             #and append any setup code to the cell block we're in
+            #also figure out what language we're using
             if self.tests is None:
+                self.log.debug('Loading tests template file')
                 self._load_test_template_file(resources)
                 if 'setup' in self.tests:
                     new_lines.append(self.tests['setup'])
-                 
+                self.log.debug('Setting sanitizer for language ' + resources['kernel_name'])
+                self.sanitizer = self.output_sanitizers.get(resources['kernel_name'], lambda x : x)
+
             #decide whether to use hashing based on whether the self.hashed_delimiter token appears in the line before the self.autotest_delimiter token
             use_hash = self.hashed_delimiter in line[:line.find(self.autotest_delimiter)]
-            self.log.debug('Hashing delimiter ' + str('' if use_hash else 'not') + ' found')
+            self.log.debug('Hashing delimiter ' + str('' if use_hash else 'not ') + 'found')
             
             #take everything after the autotest_delimiter as code snippets separated by semicolons
             snippets = [snip.strip() for snip in line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].split(';')]
@@ -154,8 +171,9 @@ class InstantiateTests(Execute):
             for snippet in snippets:
                 self.log.debug('Running autotest generation for snippet ' + snippet)
 
+                self.log.debug('Getting templates')
                 test_template, variable_snippets, hash_snippet = self._get_templates(snippet, use_hash)
-                
+
                 #create a random salt for this test
                 salt = secrets.token_hex(8)
                 if use_hash:
@@ -163,8 +181,7 @@ class InstantiateTests(Execute):
 
                 #evaluate everything needed to instantiate the test
                 test_variables = {}
-                self.log.debug('Getting template variable executions') 
-
+                self.log.debug('Evaluating variable templates')
                 for variable_name, variable_snippet in variable_snippets.items():
                     self.log.debug('Template variable name: ' + variable_name)
                     self.log.debug('Template snippet: ' + variable_snippet)
@@ -173,11 +190,14 @@ class InstantiateTests(Execute):
                     test_variables[variable_name] = {}
                     test_variables[variable_name]['code'], test_variables[variable_name]['val'] = self._evaluate_variable_snippet(snippet, variable_snippet, salt, hash_snippet)
                     
+                    self.log.debug('Variable code: ' + str(test_variables[variable_name]['code']))
+                    self.log.debug('Variable value: ' + str(test_variables[variable_name]['val']))
 
                 #instantiate the overall test template
+                self.log.debug('Evaluating test template')
                 template = j2.Environment(loader=j2.BaseLoader).from_string(test_template)
                 instantiated_test = template.render(snippet=snippet, **test_variables)
-                self.log.debug('Instantiated test: ' + instantiated_test)
+                self.log.debug('Instantiated test:\n' + instantiated_test)
 
                 #add lines of code to the cell 
                 new_lines.extend(instantiated_test.split('\n'))
@@ -219,10 +239,7 @@ class InstantiateTests(Execute):
         #get the test code; if the type isn't in our dict, just default to 'default'
         #if default isn't in the tests code, this will throw an error
         try:
-            if dispatch_result in self.tests:
-                test = self.tests['templates'][dispatch_result] 
-            else: 
-                test = self.tests['templates']['default']
+            test = self.tests['templates'].get(dispatch_result, self.tests['templates']['default'])
         except KeyError:
             self.log.error('tests.yml must contain a top-level "default" key with corresponding test code')
             raise
@@ -244,15 +261,15 @@ class InstantiateTests(Execute):
         #first, if things are being hashed, replace snippet variable in the template_snippet with the hash_snippet
         if hash_snippet is not None:
             #substitute the hash instantiate the template snippet
-            template = j2.Environment(loader=j2.BaseLoader).from_string(variable_snippet)
-            preprocessed_snippet = template.render(snippet=hash_snippet)   
+            template = j2.Environment(loader=j2.BaseLoader).from_string(hash_snippet)
+            preprocessed_snippet = template.render(snippet=variable_snippet, salt=salt)   
             self.log.debug('Variable snippet with hash template and salt inserted: ' + preprocessed_snippet)
         else:
             preprocessed_snippet = variable_snippet
 
         #instantiate the template snippet
         template = j2.Environment(loader=j2.BaseLoader).from_string(preprocessed_snippet)
-        instantiated_snippet = template.render(snippet=snippet, salt=salt)
+        instantiated_snippet = template.render(snippet=snippet)
         #run the instantiated template code
         variable_value = self._execute_code_snippet(instantiated_snippet)
         self.log.debug('Instantiated variable snippet: ' + instantiated_snippet)
@@ -317,7 +334,7 @@ class InstantiateTests(Execute):
                 self.log.debug("content: %s", content)
 
                 if msg_type in {'execute_result', 'display_data', 'update_display_data'}:
-                    return content['data']['text/plain']
+                    return self.sanitizer(content['data']['text/plain'])
 
                 if msg_type == 'error':
                     raise CellExecutionError.from_code_and_msg(code, content)
