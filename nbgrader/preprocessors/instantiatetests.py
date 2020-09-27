@@ -13,11 +13,6 @@ try:
 except ImportError:
     from time import time as monotonic # Py 2
 
-
-def sanitize_R_output(out):
-    out = re.sub(r'\[\d+\]\s+', '', out)
-    return out.strip('"').strip("'")
-
 class CellExecutionComplete(Exception):
     """
     Used as a control signal for cell execution across run_cell and
@@ -104,7 +99,12 @@ class InstantiateTests(Execute):
     ).tag(config=True)
 
     output_sanitizers = {
-        'ir' : sanitize_R_output
+        'ir' : lambda s : re.sub(r'\[\d+\]\s+', '', s).strip('"').strip("'")
+    }
+
+    output_stringifiers = {
+        'ir' : lambda s : 'toString(' + s +')'
+        'python' : lambda s : 'str(' + s +')'
     }
 
     def preprocess_cell(self, cell, resources, index):
@@ -152,8 +152,9 @@ class InstantiateTests(Execute):
                 self._load_test_template_file(resources)
                 if 'setup' in self.tests:
                     new_lines.append(self.tests['setup'])
-                self.log.debug('Setting sanitizer for language ' + resources['kernel_name'])
+                self.log.debug('Setting sanitizer/stringifier for language ' + resources['kernel_name'])
                 self.sanitizer = self.output_sanitizers.get(resources['kernel_name'], lambda x : x)
+                self.stringifier = self.output_stringifiers[resources['kernel_name']]
 
             #decide whether to use hashing based on whether the self.hashed_delimiter token appears in the line before the self.autotest_delimiter token
             use_hash = self.hashed_delimiter in line[:line.find(self.autotest_delimiter)]
