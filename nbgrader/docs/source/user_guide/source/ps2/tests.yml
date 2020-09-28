@@ -1,6 +1,8 @@
-setup: "library(digest)"
+setup: "library(digest,testthat)"
+hash: 'digest(paste({{snippet}}), "{{salt}}"))'
 dispatch: "class({{snippet}})"
-hash: "digest(paste(toString({{snippet}}), '{{salt}}'))"
+normalize: 'toString({{snippet}})'
+check: "test_that('{{message}}', {expect_equal({{snippet}}, '{{value}}')})"
 success: "print('Success!')"
 templates:
     default: 
