@@ -107,15 +107,6 @@ class InstantiateTests(Execute):
         'python3' : lambda s : s.strip('"').strip("'")
     }
 
-    def preprocess(self,
-                   nb: NotebookNode,
-                   resources: ResourcesDict,
-                   retries: Optional[Any] = None
-                   ) -> Tuple[NotebookNode, ResourcesDict]:
-        kernel_name = nb.metadata.get('kernelspec', {}).get('name', 'python')
-        resources['kernel_name'] = kernel_name
-        super(InstantiateTests, self).preprocess(nb, resources, retries) 
-
     def preprocess_cell(self, cell, resources, index):
         #new_lines will store the replacement code after autotest template instantiation
         new_lines = []
