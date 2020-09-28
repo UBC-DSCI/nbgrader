@@ -1,5 +1,5 @@
 setup: "from hashlib import sha1"
-hash: 'sha1({{snippet}}).encode("utf-8")+b"{{salt}}").hexdigest()'
+hash: 'sha1({{snippet}}.encode("utf-8")+b"{{salt}}").hexdigest()'
 dispatch: "type({{snippet}})"
 normalize: "str({{snippet}})"
 check: "assert {{snippet}} == '{{value}}', '{{message}}'"

@@ -99,11 +99,12 @@ class InstantiateTests(Execute):
 
     comment_strs = {
         'ir' : '#',
-        'python' : '#'
+        'python3' : '#'
     }
 
     sanitizers = {
-        'ir' : lambda s : re.sub(r'\[\d+\]\s+', '', s).strip('"').strip("'")
+        'ir' : lambda s : re.sub(r'\[\d+\]\s+', '', s).strip('"').strip("'"),
+        'python3' : lambda s : s.strip('"').strip("'")
     }
 
     def preprocess_cell(self, cell, resources, index):
@@ -125,6 +126,9 @@ class InstantiateTests(Execute):
 
         #split the code lines into separate strings
         lines = cell.source.split("\n")
+
+        
+        tests_loaded = False
 
         for line in lines:
 
@@ -150,7 +154,7 @@ class InstantiateTests(Execute):
             #tests object from the tests.yml template file for the assignment
             #and append any setup code to the cell block we're in
             #also figure out what language we're using
-            if self.tests is None:
+            if not tests_loaded:
                 self.log.debug('Loading tests template file')
                 self._load_test_template_file(resources)
                 if self.setup_code is not None:
@@ -158,9 +162,10 @@ class InstantiateTests(Execute):
                     self._execute_code_snippet(self.setup_code)
                 self.log.debug('Setting sanitizer for language ' + resources['kernel_name'])
                 self.sanitizer = self.sanitizers.get(resources['kernel_name'], lambda x : x)
+                tests_loaded = True
 
             #decide whether to use hashing based on whether the self.hashed_delimiter token appears in the line before the self.autotest_delimiter token
-            use_hash = self.hashed_delimiter in line[:line.find(self.autotest_delimiter)]:
+            use_hash = (self.hashed_delimiter in line[:line.find(self.autotest_delimiter)])
             if use_hash:
                 self.log.debug('Hashing delimiter found, using template: ' + self.hash_template)
             else:
@@ -178,10 +183,6 @@ class InstantiateTests(Execute):
             for snippet in snippets:
                 self.log.debug('Running autotest generation for snippet ' + snippet)
 
-                #get the normalized(/hashed) template tests for this code snippet
-                self.log.debug('Getting normalized'+('/hashed ' if use_hash else ' ')+ 'test templates based on type')
-                test_templates, fail_messages = self._get_templates(snippet, use_hash)
-
                 #create a random salt for this test
                 if use_hash:
                     salt = secrets.token_hex(8)
@@ -189,21 +190,14 @@ class InstantiateTests(Execute):
                 else:
                     salt = None
 
-                # evaluate all the template tests
-                self.log.debug('Instantiating tests')
-                instantiated_tests = [] 
-                test_values = []
-                for test_template in test_templates:
-                    instantiated_test, test_value = self._evaluate_test(test_template, snippet, salt)
-                    self.log.debug('Instantiated test: ' + instantiated_test)
-                    self.log.debug('Test value: ' + test_value)
-                    instantiated_tests.append(instantiated_test)
-                    test_values.append(test_value)
+                #get the normalized(/hashed) template tests for this code snippet
+                self.log.debug('Instantiating normalized'+('/hashed ' if use_hash else ' ')+ 'test templates based on type')
+                instantiated_tests, test_values, fail_messages = self._instantiate_tests(snippet, salt)
 
                 # add all the lines to the cell
                 self.log.debug('Inserting test code into cell')
                 template = j2.Environment(loader=j2.BaseLoader).from_string(self.check_template)
-                for i in range(len(test_templates)):
+                for i in range(len(instantiated_tests)):
                     check_code = template.render(snippet=instantiated_tests[i], value=test_values[i], message=fail_messages[i])
                     self.log.debug('Test: ' + check_code)
                     new_lines.append(check_code)
@@ -232,27 +226,27 @@ class InstantiateTests(Execute):
             raise
 
         #get the test templates
-        self.test_templates_by_type = self.tests['templates']
+        self.test_templates_by_type = tests['templates']
 
         #get the test dispatch code template
-        self.dispatch_template = self.tests['dispatch']
+        self.dispatch_template = tests['dispatch']
 
         #get the sucess message template
-        self.success_template = self.tests['success']
+        self.success_template = tests['success']
 
         #get the hash code template
-        self.hash_template = self.tests['hash']
+        self.hash_template = tests['hash']
 
         #get the hash code template
-        self.check_template = self.tests['check']
+        self.check_template = tests['check']
 
         #get the hash code template
-        self.normalize_template = self.tests['normalize']
+        self.normalize_template = tests['normalize']
 
         #get the setup code if it's there
-        self.setup_code = self.tests.get('setup', None)
+        self.setup_code = tests.get('setup', None)
 
-    def _get_templates(self, snippet, use_hash):
+    def _instantiate_tests(self, snippet, salt = None):
         #get the type of the snippet output (used to dispatch autotest)
         template = j2.Environment(loader=j2.BaseLoader).from_string(self.dispatch_template)
         dispatch_code = template.render(snippet=snippet)
@@ -281,24 +275,26 @@ class InstantiateTests(Execute):
 
         #hashify the templates
         processed_templs = []
-        if use_hash:
+        if salt is not None:
             for templ in normalized_templs:
                 template = j2.Environment(loader=j2.BaseLoader).from_string(self.hash_template)
-                processed_templs.append(template.render(snippet=templ))
+                processed_templs.append(template.render(snippet=templ, salt=salt))
         else:
             processed_templs = normalized_templs
 
-        return processed_templs, fail_msgs
+        #instantiate and evaluate the tests
+        instantiated_tests = []
+        test_values = []
+        for templ in processed_templs:
+            #instantiate the template snippet
+            template = j2.Environment(loader=j2.BaseLoader).from_string(templ)
+            instantiated_test = template.render(snippet=snippet)
+            #run the instantiated template code
+            test_value = self._execute_code_snippet(instantiated_test)
+            instantiated_tests.append(instantiated_test)
+            test_values.append(test_value)
 
-    def _evaluate_test(self, test_template, snippet, salt = None):
-        #instantiate the template snippet
-        template = j2.Environment(loader=j2.BaseLoader).from_string(test_template)
-        instantiated_test = template.render(snippet=snippet, salt=salt)
-        #run the instantiated template code
-        test_value = self._execute_code_snippet(instantiated_snippet)
-        self.log.debug('Instantiated test snippet: ' + instantiated_test)
-        self.log.debug('Test value: ' + test_value)
-        return instantiated_test, test_value
+        return instantiated_tests, test_values, fail_msgs
 
     #adapted from nbconvert.ExecutePreprocessor.run_cell
     def _execute_code_snippet(self, code):
@@ -353,14 +349,14 @@ class InstantiateTests(Execute):
             #process the message
             try:
                 msg_type = msg['msg_type']
-                self.log.debug("msg_type: %s", msg_type)
                 content = msg['content']
-                self.log.debug("content: %s", content)
 
                 if msg_type in {'execute_result', 'display_data', 'update_display_data'}:
+                    self.log.debug("execute result: %s", content)
                     return self.sanitizer(content['data']['text/plain'])
 
                 if msg_type == 'error':
+                    self.log.debug("execute error: %s", content)
                     raise CellExecutionError.from_code_and_msg(code, content)
 
                 if msg_type == 'status':
