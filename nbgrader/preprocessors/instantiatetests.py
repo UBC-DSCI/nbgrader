@@ -208,6 +208,10 @@ class InstantiateTests(Execute):
         # replace the cell source
         cell.source = "\n".join(new_lines)
 
+        # add the final success message
+        if tests_loaded:
+            cell.source += '\n'+self.success_code
+
         return cell, resources
 
     def _load_test_template_file(self, resources):
@@ -232,7 +236,7 @@ class InstantiateTests(Execute):
         self.dispatch_template = tests['dispatch']
 
         #get the sucess message template
-        self.success_template = tests['success']
+        self.success_code = tests['success']
 
         #get the hash code template
         self.hash_template = tests['hash']
