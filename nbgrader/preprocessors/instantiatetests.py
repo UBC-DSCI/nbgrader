@@ -172,7 +172,7 @@ class InstantiateTests(Execute):
                 self.log.debug('Hashing delimiter not found')
             
             #take everything after the autotest_delimiter as code snippets separated by semicolons
-            snippets = [snip.strip() for snip in line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].split(';')]
+            snippets = [snip.strip() for snip in line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].strip(';').split(';')]
 
             #print autotest snippets to log
             self.log.debug('Found snippets to autotest: ')
