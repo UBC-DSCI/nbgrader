@@ -1,20 +1,17 @@
 setup: "from hashlib import sha1"
+hash: 'sha1({{snippet}}.encode("utf-8")+b"{{salt}}").hexdigest()'
 dispatch: "type({{snippet}})"
+normalize: "str({{snippet}})"
+check: "assert {{snippet}} == '{{value}}', '{{message}}'"
+success: "print('Success!')"
 templates:
     default: 
-        hash: "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
-        test: "assert {{answer.code}} == {{answer.val}}"
-        variables:
-            answer: "{{snippet}}"
+        - test: "{{snippet}}"
+          fail: "Value not correct."
     string:
-        hash: "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
-        test: >
-            "assert {{str.code}} == {{str.val}}
-             assert {{strlen.code}} == {{strlen.val}}
-             print('Success!')
-            "
-        variables:
-            str: "{{snippet}}"
-            strlen: "len({{snippet}})"
+        - test: "{{snippet}}"
+          fail: "String doesn't align"
+        - test: "len({{snippet}})"
+          fail: "length not correct"
     
 
