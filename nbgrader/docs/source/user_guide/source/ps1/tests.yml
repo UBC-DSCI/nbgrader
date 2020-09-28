@@ -1,13 +1,12 @@
 setup: "from hashlib import sha1"
 dispatch: "type({{snippet}})"
+hash: "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
 templates:
     default: 
-        hash: "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
         test: "assert {{answer.code}} == {{answer.val}}"
         variables:
             answer: "{{snippet}}"
     string:
-        hash: "sha1(str({{snippet}}).encode('utf-8')+b'{{salt}}').hexdigest()"
         test: >
             "assert {{str.code}} == {{str.val}}
              assert {{strlen.code}} == {{strlen.val}}

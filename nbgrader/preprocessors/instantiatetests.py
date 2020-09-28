@@ -13,11 +13,6 @@ try:
 except ImportError:
     from time import time as monotonic # Py 2
 
-
-def sanitize_R_output(out):
-    out = re.sub(r'\[\d+\]\s+', '', out)
-    return out.strip('"').strip("'")
-
 class CellExecutionComplete(Exception):
     """
     Used as a control signal for cell execution across run_cell and
@@ -104,7 +99,12 @@ class InstantiateTests(Execute):
     ).tag(config=True)
 
     output_sanitizers = {
-        'ir' : sanitize_R_output
+        'ir' : lambda s : re.sub(r'\[\d+\]\s+', '', s).strip('"').strip("'")
+    }
+
+    serializers = {
+        'ir' : None,
+        'python' : None
     }
 
     def preprocess_cell(self, cell, resources, index):
@@ -156,8 +156,12 @@ class InstantiateTests(Execute):
                 self.sanitizer = self.output_sanitizers.get(resources['kernel_name'], lambda x : x)
 
             #decide whether to use hashing based on whether the self.hashed_delimiter token appears in the line before the self.autotest_delimiter token
-            use_hash = self.hashed_delimiter in line[:line.find(self.autotest_delimiter)]
-            self.log.debug('Hashing delimiter ' + str('' if use_hash else 'not ') + 'found')
+            if self.hashed_delimiter in line[:line.find(self.autotest_delimiter)]:
+                self.log.debug('Hashing delimiter found')
+                hash_snippet = self.tests['hash']
+            else
+                self.log.debug('Hashing delimiter not found')
+                hash_snippet = None
             
             #take everything after the autotest_delimiter as code snippets separated by semicolons
             snippets = [snip.strip() for snip in line[line.find(self.autotest_delimiter)+len(self.autotest_delimiter):].split(';')]
@@ -172,11 +176,11 @@ class InstantiateTests(Execute):
                 self.log.debug('Running autotest generation for snippet ' + snippet)
 
                 self.log.debug('Getting templates')
-                test_template, variable_snippets, hash_snippet = self._get_templates(snippet, use_hash)
+                test_template, variable_snippets = self._get_templates(snippet)
 
                 #create a random salt for this test
                 salt = secrets.token_hex(8)
-                if use_hash:
+                if hash_snippet:
                     self.log.debug('Salt: ' + salt) 
 
                 #evaluate everything needed to instantiate the test
@@ -230,7 +234,7 @@ class InstantiateTests(Execute):
         if 'setup' in self.tests:
             self._execute_code_snippet(self.tests['setup'])
 
-    def _get_templates(self, snippet, use_hash):
+    def _get_templates(self, snippet):
         #get the type of the snippet output (used to dispatch autotest)
         template = j2.Environment(loader=j2.BaseLoader).from_string(self.dispatch_template)
         dispatch_code = template.render(snippet=snippet)
@@ -246,16 +250,11 @@ class InstantiateTests(Execute):
         try:
             test_template = test['test']
             variable_snippets = test['variables']
-            if use_hash:
-                hash_snippet = test['hash']
-            else:
-                hash_snippet = None
         except KeyError:
             self.log.error('each type in tests.yml must have a "test" and "variables" item')
             self.log.error('the "test" item should store the test template code, and the "variables" item should store a dict of template variable names and corresponding code to run')
-            self.log.error('if hashing is requested, the test item should also have a "hash" item storing hashing code')
             raise
-        return test_template, variable_snippets, hash_snippet
+        return test_template, variable_snippets
 
     def _evaluate_variable_snippet(self, snippet, variable_snippet, salt, hash_snippet):
         #first, if things are being hashed, replace snippet variable in the template_snippet with the hash_snippet
