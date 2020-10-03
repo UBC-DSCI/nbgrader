@@ -4,6 +4,7 @@ define([
     ], function(Jupyter, events) {
 
     var limit_cell_heights() {
+        console.log('LOADED THE EXTENSION PROPERLY')
         cells = Jupyter.notebook.get_cells();
         for (var i=0; i < cells.length; i++) {
             if (cells[i].metadata.max_height !== undefined) {
