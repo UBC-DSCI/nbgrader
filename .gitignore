@@ -111,3 +111,7 @@ gradebook.db
 package-lock.json
 .goutputstream*
 
+
+# vim swap
+*.swp
+*.swo
