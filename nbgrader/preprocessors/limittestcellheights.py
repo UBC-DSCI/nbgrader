@@ -14,5 +14,5 @@ class LimitTestCellHeights(NbGraderPreprocessor):
 
     def preprocess_cell(self, cell, resources, cell_index):
         if utils.is_grade(cell):
-            cell.metadata['nbgrader']['max_height'] = self.test_cell_height
+            cell.metadata['max_height'] = self.test_cell_height
         return cell, resources

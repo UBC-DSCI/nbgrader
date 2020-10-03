@@ -3,10 +3,10 @@ define([
     'base/js/events'
     ], function(Jupyter, events) {
 
-    var limit_testcell_heights() {
+    var limit_cell_heights() {
         cells = Jupyter.notebook.get_cells();
         for (var i=0; i < cells.length; i++) {
-            if (cells[i].metadata.nbgrader !== undefined && cells[i].metadata.nbgrader.hasOwnProperty("max_height")) {
+            if (cells[i].metadata.max_height !== undefined) {
                 mh = cells[i].metadata.nbgrader.max_height
                 var code = cells[i].element.find(".CodeMirror")[0].CodeMirror;
                   code.options.fold = true;
@@ -16,7 +16,7 @@ define([
     }
     // Run on start
     function load_ipython_extension() {
-        limit_testcall_heights();
+        limit_cell_heights();
     }
     return {
         load_ipython_extension: load_ipython_extension
