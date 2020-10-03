@@ -10,6 +10,7 @@ from ..preprocessors import (
     IncludeHeaderFooter,
     ClearSolutions,
     LockCells,
+    LimitTestCellHeights,
     ComputeChecksums,
     SaveCells,
     CheckCellMetadata,
@@ -58,6 +59,7 @@ class GenerateAssignment(BaseConverter):
     preprocessors = List([
         IncludeHeaderFooter,
         LockCells,
+        LimitTestCellHeights,
         ClearSolutions,
         ClearOutput,
         CheckCellMetadata,
