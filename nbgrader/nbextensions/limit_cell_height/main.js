@@ -1,25 +1,24 @@
 define([
     'base/js/namespace',
     'base/js/events'
-    ], function(Jupyter, events) {
+    ], function (Jupyter, events) {
 
-    var limit_cell_heights() {
-        console.log('LOADED THE EXTENSION PROPERLY')
+    var limit_cell_heights = function() {
         cells = Jupyter.notebook.get_cells();
+        console.log(cells)
         for (var i=0; i < cells.length; i++) {
             if (cells[i].metadata.max_height !== undefined) {
-                mh = cells[i].metadata.nbgrader.max_height
+                console.log('found max height cell')
+                mh = cells[i].metadata.max_height;
+                console.log(mh)
                 var code = cells[i].element.find(".CodeMirror")[0].CodeMirror;
-                  code.options.fold = true;
-                  code.setSize(null, mh);
+                console.log(code)
+                code.options.fold = true;
+                code.setSize(null, mh);
             }
         }
-    }
-    // Run on start
-    function load_ipython_extension() {
-        limit_cell_heights();
-    }
+    };
     return {
-        load_ipython_extension: load_ipython_extension
+        load_ipython_extension: limit_cell_heights
     };
 });
