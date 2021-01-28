@@ -310,6 +310,42 @@ class InstantiateTests(Execute):
 
         return instantiated_tests, test_values, fail_msgs
 
+    #################
+    #################
+    ### Code adapted from an old version of nbconvert.ExecutePreprocessor from roughly Jan 2020 (before asyncio update)
+    ### the below code (primary function is _execute_code_snippet) allows us to run individual snippets of code rather than full cells
+    #################
+    #################
+
+    #adapted from nbconvert.ExecutePreprocessor._poll_for_reply, ._check_alive,
+    def _poll_for_reply(self, msg_id, cell=None, timeout=None):
+        try:
+            # check with timeout if kernel is still alive
+            msg = self.kc.shell_channel.get_msg(timeout=timeout)
+            if msg['parent_header'].get('msg_id') == msg_id:
+                return msg
+        except Empty:
+            # received no message, check if kernel is still alive
+            if not self.kc.is_alive():
+                self.log.error(
+                    "Kernel died while waiting for execute reply.")
+                raise DeadKernelError("Kernel died")
+            # kernel still alive, wait for a message
+
+    #taken from nbconvert.ExecutePreprocessor._timeout_with_deadline
+    def _timeout_with_deadline(self, timeout, deadline):
+        if deadline is not None and deadline - monotonic() < timeout:
+            timeout = deadline - monotonic()
+        if timeout < 0:
+            timeout = 0
+        return timeout 
+
+    #taken from nbconvert.ExecutePreprocessor._passed_deadline
+    def _passed_deadline(self, deadline):
+        if deadline is not None and deadline - monotonic() <= 0:
+            return True
+        return False
+
     #adapted from nbconvert.ExecutePreprocessor.run_cell
     def _execute_code_snippet(self, code):
         parent_msg_id = self.kc.execute(code, stop_on_error=not self.allow_errors)
