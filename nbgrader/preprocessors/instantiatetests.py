@@ -107,6 +107,16 @@ class InstantiateTests(Execute):
         'python3' : lambda s : s.strip('"').strip("'")
     }
 
+    def preprocess(self, nb, resources):
+        kernel_name = nb.metadata.get("kernelspec", {}).get("name", "")
+        if kernel_name not in self.comment_strs:
+            raise ValueError(
+                "kernel '{}' has not been specified in "
+                "InstantiateTests.comment_strs".format(kernel_name))
+        resources["kernel_name"] = kernel_name
+        nb, resources = super(InstantiateTests, self).preprocess(nb, resources)
+        return nb, resources
+
     def preprocess_cell(self, cell, resources, index):
         #new_lines will store the replacement code after autotest template instantiation
         new_lines = []
