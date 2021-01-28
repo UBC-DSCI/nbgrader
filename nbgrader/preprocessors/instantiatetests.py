@@ -7,6 +7,7 @@ from traitlets import Bool, List, Integer, Unicode
 from textwrap import dedent
 from . import Execute
 import secrets
+import asyncio
 
 try:
     from time import monotonic # Py 3
@@ -169,7 +170,7 @@ class InstantiateTests(Execute):
                 self._load_test_template_file(resources)
                 if self.setup_code is not None:
                     new_lines.append(self.setup_code)
-                    self._execute_code_snippet(self.setup_code)
+                    asyncio.run(self._execute_code_snippet(self.setup_code))
                 self.log.debug('Setting sanitizer for language ' + resources['kernel_name'])
                 self.sanitizer = self.sanitizers.get(resources['kernel_name'], lambda x : x)
                 tests_loaded = True
@@ -264,7 +265,7 @@ class InstantiateTests(Execute):
         #get the type of the snippet output (used to dispatch autotest)
         template = j2.Environment(loader=j2.BaseLoader).from_string(self.dispatch_template)
         dispatch_code = template.render(snippet=snippet)
-        dispatch_result = self._execute_code_snippet(dispatch_code)
+        dispatch_result = asyncio.run(self._execute_code_snippet(dispatch_code))
         self.log.debug('Dispatch result returned by kernel: ' + dispatch_result)
         #get the test code; if the type isn't in our dict, just default to 'default'
         #if default isn't in the tests code, this will throw an error
@@ -304,7 +305,7 @@ class InstantiateTests(Execute):
             template = j2.Environment(loader=j2.BaseLoader).from_string(templ)
             instantiated_test = template.render(snippet=snippet)
             #run the instantiated template code
-            test_value = self._execute_code_snippet(instantiated_test)
+            test_value = asyncio.run(self._execute_code_snippet(instantiated_test))
             instantiated_tests.append(instantiated_test)
             test_values.append(test_value)
 
@@ -313,20 +314,24 @@ class InstantiateTests(Execute):
     #################
     #################
     ### Code adapted from an old version of nbconvert.ExecutePreprocessor from roughly Jan 2020 (before asyncio update)
-    ### the below code (primary function is _execute_code_snippet) allows us to run individual snippets of code rather than full cells
+    ### the below code allows us to run individual snippets of code using the kernel client self.kc (rather than full cells)
+    ### primary function is _execute_code_snippet
+    ### nbconvert/nbclient recently updated to use asyncio for this. In a future update we should remove all of the below functions
+    ### (which are mostly adapted from old nbconvert style) and replace them with properly coded asyncio stuff
+    ### adapted from current nbclient.NotebookClient kernel execution code
     #################
     #################
 
     #adapted from nbconvert.ExecutePreprocessor._poll_for_reply, ._check_alive,
-    def _poll_for_reply(self, msg_id, cell=None, timeout=None):
+    async def _poll_for_reply(self, msg_id, cell=None, timeout=None):
         try:
             # check with timeout if kernel is still alive
-            msg = self.kc.shell_channel.get_msg(timeout=timeout)
+            msg = await self.kc.shell_channel.get_msg(timeout=timeout)
             if msg['parent_header'].get('msg_id') == msg_id:
                 return msg
-        except Empty:
+        except:
             # received no message, check if kernel is still alive
-            if not self.kc.is_alive():
+            if not (await self.kc.is_alive()):
                 self.log.error(
                     "Kernel died while waiting for execute reply.")
                 raise DeadKernelError("Kernel died")
@@ -347,7 +352,7 @@ class InstantiateTests(Execute):
         return False
 
     #adapted from nbconvert.ExecutePreprocessor.run_cell
-    def _execute_code_snippet(self, code):
+    async def _execute_code_snippet(self, code):
         parent_msg_id = self.kc.execute(code, stop_on_error=not self.allow_errors)
         self.log.debug("Executing command for autotest generation:\n%s", code)
         deadline = None
@@ -367,7 +372,7 @@ class InstantiateTests(Execute):
                 # Avoid exceeding the execution timeout (deadline), but stop
                 # after at most 1s so we can poll output from iopub_channel.
                 timeout = self._timeout_with_deadline(1, deadline)
-                exec_reply = self._poll_for_reply(parent_msg_id, cell=None, timeout=timeout)
+                exec_reply = await self._poll_for_reply(parent_msg_id, cell=None, timeout=timeout)
                 if exec_reply is not None:
                     polling_exec_reply = False
 
@@ -378,8 +383,8 @@ class InstantiateTests(Execute):
                         # Avoid exceeding the execution timeout (deadline) while
                         # polling for output.
                         timeout = self._timeout_with_deadline(timeout, deadline)
-                    msg = self.kc.iopub_channel.get_msg(timeout=timeout)
-                except Empty:
+                    msg = await self.kc.iopub_channel.get_msg(timeout=timeout)
+                except:
                     if polling_exec_reply:
                         # Still waiting for execution to finish so we expect that
                         # output may not always be produced yet.
