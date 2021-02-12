@@ -1,8 +1,8 @@
 import os
+import io
 import hashlib
 import dateutil.parser
 import glob
-import six
 import sys
 import shutil
 import stat
@@ -17,6 +17,9 @@ from setuptools.archive_util import unpack_zipfile
 from tornado.log import LogFormatter
 from dateutil.tz import gettz
 from datetime import datetime
+from nbformat.notebooknode import NotebookNode
+from logging import Logger
+from typing import Optional, Tuple, Union, List, Iterator, Any
 
 # pwd is for unix passwords only, so we shouldn't import it on
 # windows machines
@@ -26,28 +29,28 @@ else:
     pwd = None
 
 
-def is_task(cell):
+def is_task(cell: NotebookNode) -> bool:
     """Returns True if the cell is a task cell."""
     if 'nbgrader' not in cell.metadata:
         return False
     return cell.metadata['nbgrader'].get('task', False)
 
 
-def is_grade(cell):
+def is_grade(cell: NotebookNode) -> bool:
     """Returns True if the cell is a grade cell."""
     if 'nbgrader' not in cell.metadata:
         return False
     return cell.metadata['nbgrader'].get('grade', False)
 
 
-def is_solution(cell):
+def is_solution(cell: NotebookNode) -> bool:
     """Returns True if the cell is a solution cell."""
     if 'nbgrader' not in cell.metadata:
         return False
     return cell.metadata['nbgrader'].get('solution', False)
 
 
-def is_locked(cell):
+def is_locked(cell: NotebookNode) -> bool:
     """Returns True if the cell source is locked (will be overwritten)."""
     if 'nbgrader' not in cell.metadata:
         return False
@@ -59,38 +62,58 @@ def is_locked(cell):
         return cell.metadata['nbgrader'].get('locked', False)
 
 def get_partial_grade(output, max_points, log=None):
+    """
+    Calculates partial grade for a cell, based on contents of
+    output["data"]["text/plain"]. Returns a value between 0
+    and max_points. Returns max_points (and a warning) for edge cases.
+    """
     # check that output["data"]["text/plain"] exists
     if not output["data"]["text/plain"]:
         raise KeyError("output ['data']['text/plain'] does not exist")
     grade = output["data"]["text/plain"]
-    warning_msg = """For autograder tests, expecting output to indicate
-    partial credit and be single value between 0.0 and max_points.
-    Currently treating other output as full credit, but future releases
-    may treat as error."""
-    # For partial credit, expecting grade to be a value between 0 and max_points
-    # A valid value for key output["data"]["text/plain"] can be a list or a string
+    # For partial credit, expecting grade to be a value between 0
+    # and max_points
+    # A valid value for key output["data"]["text/plain"] can be a
+    # list or a string, so handle the string case
     if (isinstance(grade,list)):
+        # grade is a list
         if (len(grade)>1):
             if log:
+                warning_msg = """Cell output is {}, which is a list. For autograder tests, expecting output to indicate
+                partial credit and be single value between 0.0 and max_points.
+                Currently treating other output as full credit, but future
+                releases may treat as error.""".format(grade)
                 log.warning(warning_msg)
             return max_points
+        # if a single value in list, set grade to that value
         grade = grade[0]
     try:
+        # now that we have a single values for grade, can we
+        # convert to a float?
         grade = float(grade)
     except ValueError:
         if log:
+            warning_msg = """Cell output is {}, which cannot be converted to
+            a float. For
+            autograder tests, expecting output to indicate
+            partial credit and be single value between 0.0 and max_points.
+            Currently treating other output as full credit, but future releases
+            may treat as error.""".format(grade)
             log.warning(warning_msg)
         return max_points
-    if (grade > 0.0):
+    if (grade >= 0.0):
         if (grade > max_points):
             raise ValueError("partial credit cannot be greater than maximum points for cell")
         return grade
     else:
         if log:
+            warning_msg = """Cell output is {}, which is less than 0.0.
+            This is strange.""".format(grade)
             log.warning(warning_msg)
         return max_points
 
-def determine_grade(cell, log=None):
+
+def determine_grade(cell: NotebookNode, log: Logger = None) -> Tuple[Optional[float], float]:
     if not is_grade(cell):
         raise ValueError("cell is not a grade cell")
 
@@ -111,7 +134,7 @@ def determine_grade(cell, log=None):
         # 3. output is something else, or nothing (full credit).
         for output in cell.outputs:
             # option 1: error, return 0
-            if output.output_type == 'error':
+            if output.output_type == 'error' or output.output_type == "stream" and output.name == "stderr":
                 return 0, max_points
             # if not error, then check for option 2, partial credit
             if output.output_type == 'execute_result':
@@ -126,19 +149,12 @@ def determine_grade(cell, log=None):
         return None, max_points
 
 
-def to_bytes(string):
-    """A python 2/3 compatible function for converting a string to bytes.
-    In Python 2, this just returns the 8-bit string. In Python 3, this first
-    encodes the string to utf-8.
-
-    """
-    if sys.version_info[0] == 3 or (sys.version_info[0] == 2 and isinstance(string, unicode)):
-        return bytes(string.encode('utf-8'))
-    else:
-        return bytes(string)
+def to_bytes(string: str) -> bytes:
+    """A helper function for converting a string to bytes with utf-8 encoding."""
+    return bytes(string.encode('utf-8'))
 
 
-def compute_checksum(cell):
+def compute_checksum(cell: NotebookNode) -> str:
     m = hashlib.md5()
     # add the cell source and type
     m.update(to_bytes(cell.source))
@@ -159,11 +175,11 @@ def compute_checksum(cell):
     return m.hexdigest()
 
 
-def parse_utc(ts):
+def parse_utc(ts: Union[datetime, str]) -> datetime:
     """Parses a timestamp into datetime format, converting it to UTC if necessary."""
     if ts is None:
         return None
-    if isinstance(ts, six.string_types):
+    if isinstance(ts, str):
         parts = ts.split(" ")
         if len(parts) == 3:
             ts = " ".join(parts[:2] + ["TZ"])
@@ -244,7 +260,7 @@ def self_owned(path):
     return get_osusername() == find_owner(os.path.abspath(path))
 
 
-def is_ignored(filename, ignore_globs=None):
+def is_ignored(filename: str, ignore_globs: List[str] = None) -> bool:
     """Determines whether a filename should be ignored, based on whether it
     matches any file glob in the given list. Note that this only matches on the
     base filename itself, not the full path."""
@@ -311,7 +327,7 @@ def ignore_patterns(exclude=None, include=None, max_file_size=None, log=None):
     return ignore_patterns
 
 
-def find_all_files(path, exclude=None):
+def find_all_files(path: str, exclude: List[str] = None) -> List[str]:
     """Recursively finds all filenames rooted at `path`, optionally excluding
     some based on filename globs."""
     files = []
@@ -340,7 +356,7 @@ def find_all_notebooks(path):
     return notebooks
 
 
-def full_split(path):
+def full_split(path: str) -> Tuple[str, ...]:
     rest, last = os.path.split(path)
     if last == path:
         return (path,)
@@ -351,7 +367,7 @@ def full_split(path):
 
 
 @contextlib.contextmanager
-def chdir(dirname):
+def chdir(dirname: str) -> Iterator:
     currdir = os.getcwd()
     if dirname:
         os.chdir(dirname)
@@ -362,8 +378,8 @@ def chdir(dirname):
 
 
 @contextlib.contextmanager
-def setenv(**kwargs):
-    previous_env = { }
+def setenv(**kwargs: Any) -> Iterator:
+    previous_env = {}
     for key, value in kwargs.items():
         previous_env[key] = os.environ.get(value)
         os.environ[key] = value
@@ -375,7 +391,7 @@ def setenv(**kwargs):
             os.environ[key] = previous_env[key]
 
 
-def rmtree(path):
+def rmtree(path: str) -> None:
     # for windows, we need to go through and make sure everything
     # is writeable, otherwise rmtree will fail
     if sys.platform == 'win32':
@@ -388,7 +404,7 @@ def rmtree(path):
     shutil.rmtree(path)
 
 
-def remove(path):
+def remove(path: str) -> None:
     # for windows, we need to make sure that the file is writeable,
     # otherwise remove will fail
     if sys.platform == 'win32':
@@ -504,7 +520,7 @@ def capture_log(app, fmt="[%(levelname)s] %(message)s"):
         - log (string): captured log output
 
     """
-    log_buff = six.StringIO()
+    log_buff = io.StringIO()
     handler = logging.StreamHandler(log_buff)
     formatter = LogFormatter(fmt="[%(levelname)s] %(message)s")
     handler.setFormatter(formatter)
