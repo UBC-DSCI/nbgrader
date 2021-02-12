@@ -128,8 +128,10 @@ class Autograde(BaseConverter):
                 os.makedirs(os.path.dirname(dest))
             if os.path.exists(dest):
                 os.remove(dest)
-            self.log.info("Copying %s -> %s", filename, dest)
-            shutil.copy(filename, dest)
+            #self.log.info("Copying %s -> %s", filename, dest)
+            #shutil.copy(filename, dest)
+            self.log.info("Creating Symlink %s -> %s", dest, filename)
+            os.symlink(filename, dest)
 
         # ignore notebooks that aren't in the database
         notebooks = []
