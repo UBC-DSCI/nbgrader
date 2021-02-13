@@ -1,1 +1,1 @@
-../../../../autograded/bitdiddle/ps1/timestamp.txt
+../../../autograded/bitdiddle/ps1/timestamp.txt

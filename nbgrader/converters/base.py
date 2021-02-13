@@ -244,7 +244,7 @@ class BaseConverter(LoggingConfigurable):
                 remove(path)
             if use_symlinks:
                 self.log.info("Creating Symlink %s -> %s", path, filename)
-                os.symlink(os.path.relpath(filename, path), path)
+                os.symlink(os.path.relpath(filename, os.path.dirname(path)), path)
             else:
                 self.log.info("Copying %s -> %s", filename, path)
                 shutil.copy(filename, path)

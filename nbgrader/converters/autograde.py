@@ -131,7 +131,7 @@ class Autograde(BaseConverter):
             #self.log.info("Copying %s -> %s", filename, dest)
             #shutil.copy(filename, dest)
             self.log.info("Creating Symlink %s -> %s", dest, filename)
-            os.symlink(os.path.relpath(filename, dest), dest)
+            os.symlink(os.path.relpath(filename, os.path.dirname(dest)), dest)
 
         # ignore notebooks that aren't in the database
         notebooks = []

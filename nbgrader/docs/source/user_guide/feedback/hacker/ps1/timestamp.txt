@@ -1,1 +1,1 @@
-../../../../autograded/hacker/ps1/timestamp.txt
+../../../autograded/hacker/ps1/timestamp.txt
