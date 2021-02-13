@@ -68,7 +68,7 @@ class Autograde(BaseConverter):
     preprocessors = List([])
 
     def init_assignment(self, assignment_id: str, student_id: str) -> None:
-        super(Autograde, self).init_assignment(assignment_id, student_id)
+        super(Autograde, self).init_assignment(assignment_id, student_id, use_symlinks=True)
         # try to get the student from the database, and throw an error if it
         # doesn't exist
         student = {}
