@@ -1,1 +1,1 @@
-/home/trevor/repos/dsci/nbgrader/nbgrader/docs/source/user_guide/submitted/hacker/ps1/timestamp.txt
+2015-02-01 09:28:58.749302 America/Los_Angeles

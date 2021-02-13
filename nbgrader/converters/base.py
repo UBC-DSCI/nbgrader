@@ -255,7 +255,8 @@ class BaseConverter(LoggingConfigurable):
         permissions = int(str(self.permissions), 8)
         for dirname, _, filenames in os.walk(dest):
             for filename in filenames:
-                os.chmod(os.path.join(dirname, filename), permissions)
+                if not os.path.islink(os.path.join(dirname, filename)):
+                    os.chmod(os.path.join(dirname, filename), permissions)
             # If groupshared, set dir permissions - see comment below.
             st_mode = os.stat(dirname).st_mode
             if self.coursedir.groupshared and st_mode & 0o2770 != 0o2770:

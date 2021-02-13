@@ -1,1 +1,1 @@
-/home/trevor/repos/dsci/nbgrader/nbgrader/docs/source/user_guide/autograded/bitdiddle/ps1/timestamp.txt
+../../../../autograded/bitdiddle/ps1/timestamp.txt
