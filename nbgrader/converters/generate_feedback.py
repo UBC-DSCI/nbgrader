@@ -61,3 +61,7 @@ class GenerateFeedback(BaseConverter):
             template_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'server_extensions', 'formgrader', 'templates'))
             c.HTMLExporter.template_path = ['.', template_path]
         self.update_config(c)
+
+    def init_assignment(self, assignment_id: str, student_id: str) -> None:
+        super(Autograde, self).init_assignment(assignment_id, student_id, True)
+

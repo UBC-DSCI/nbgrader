@@ -226,7 +226,7 @@ class BaseConverter(LoggingConfigurable):
         self.log.info("Skipping existing assignment: {}".format(dest))
         return False
 
-    def init_assignment(self, assignment_id: str, student_id: str) -> None:
+    def init_assignment(self, assignment_id: str, student_id: str, use_symlinks : bool = False) -> None:
         """Initializes resources/dependencies/etc. that are common to all
         notebooks in an assignment.
 
@@ -242,10 +242,12 @@ class BaseConverter(LoggingConfigurable):
                 os.makedirs(os.path.dirname(path))
             if os.path.exists(path):
                 remove(path)
-            #self.log.info("Copying %s -> %s", filename, path)
-            #shutil.copy(filename, path)
-            self.log.info("Creating Symlink %s -> %s", path, filename)
-            os.symlink(filename, path)
+            if use_symlinks:
+                self.log.info("Creating Symlink %s -> %s", path, filename)
+                os.symlink(os.path.relpath(filename, path), path)
+            else:
+                self.log.info("Copying %s -> %s", filename, path)
+                shutil.copy(filename, path)
 
     def set_permissions(self, assignment_id: str, student_id: str) -> None:
         self.log.info("Setting destination file permissions to %s", self.permissions)
