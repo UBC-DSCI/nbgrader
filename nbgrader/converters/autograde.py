@@ -68,7 +68,9 @@ class Autograde(BaseConverter):
     preprocessors = List([])
 
     def init_assignment(self, assignment_id: str, student_id: str) -> None:
-        super(Autograde, self).init_assignment(assignment_id, student_id, use_symlinks=True)
+        #this line copies everything from submitted folder -- don't use symlinks for this since assignment could have 
+        #generated files on a per-student basis
+        super(Autograde, self).init_assignment(assignment_id, student_id) 
         # try to get the student from the database, and throw an error if it
         # doesn't exist
         student = {}
@@ -130,6 +132,7 @@ class Autograde(BaseConverter):
                 os.remove(dest)
             #self.log.info("Copying %s -> %s", filename, dest)
             #shutil.copy(filename, dest)
+            # use symlinks here since this is where we are overwriting assignment-wide files from the source repo for grading
             self.log.info("Creating Symlink %s -> %s", dest, filename)
             os.symlink(os.path.relpath(filename, os.path.dirname(dest)), dest)
 

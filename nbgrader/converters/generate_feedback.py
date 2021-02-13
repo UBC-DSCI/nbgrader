@@ -63,5 +63,5 @@ class GenerateFeedback(BaseConverter):
         self.update_config(c)
 
     def init_assignment(self, assignment_id: str, student_id: str) -> None:
-        super(GenerateFeedback, self).init_assignment(assignment_id, student_id, True)
+        super(GenerateFeedback, self).init_assignment(assignment_id, student_id, use_symlinks=True)
 
